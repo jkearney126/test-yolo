@@ -1,7 +1,6 @@
 import os
 import io
-import sys
-import time
+import base64
 import math
 import json
 
@@ -10,8 +9,8 @@ import torch
 import torch.nn as nn
 import numpy as np
 
-sys.path.append('.')
-print(sys.path)
+# sys.path.append('.')
+# print(sys.path)
 from utils.datasets import letterbox
 from utils.general import check_img_size, non_max_suppression, scale_coords
 
@@ -131,7 +130,7 @@ def detect(model, im0, imgsz, device):
 
 
 def model_fn(model_dir):
-    model_path = os.path.join(model_dir, 'my_model', 'model.pth')
+    model_path = os.path.join(model_dir)
     model = torch.load(model_path, map_location=device)['model'].float().fuse().eval()
 #     model = attempt_load(model_path, map_location=device)
     return model
@@ -139,8 +138,9 @@ def model_fn(model_dir):
 
 def input_fn(request_body, request_content_type):
     """An input_fn that loads a pickled tensor"""
-    assert request_content_type == 'image/jpeg'
-    img = Image.open(io.BytesIO(request_body))
+    assert request_content_type == 'application/json'
+    bytes = base64.b64decode(request_body['inputs'])
+    img = Image.open(io.BytesIO(bytes))
     data = np.array(img)
     return torch.tensor(data, dtype=torch.float32, device=device)
 
@@ -201,4 +201,16 @@ def predict_fn(input_data, model):
 def output_fn(predictions, content_type):
     assert content_type == "application/json"
     res = predictions.cpu().numpy().tolist()
-    return json.dumps(res)
+    results = {'success': True, 'data': [], 'message': 'No object was detected'}
+    for pred in res:
+        class_id, cx, cy, w, h, conf = pred
+        results['data'].append({
+            'class_id': class_id,
+            'cx': cx,
+            'cy': cy,
+            'w': w,
+            'h': h,
+            'conf': conf
+        })
+    results['message'] = f'Detected {len(res)} objects'
+    return results
